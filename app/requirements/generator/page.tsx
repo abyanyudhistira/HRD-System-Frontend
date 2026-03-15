@@ -5,7 +5,7 @@ import { Sidebar } from '@/components/sidebar'
 import { TopHeader } from '@/components/top-header'
 import { Loader2, Download, Save, Plus, FileText, ChevronDown, ChevronUp } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import { supabase } from '@/lib/supabase'
+import { crawlerAPI } from '@/lib/api'
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
 
@@ -29,19 +29,15 @@ export default function RequirementsGeneratorPage() {
   // Fetch templates on mount
   useEffect(() => {
     async function fetchTemplates() {
-      const { data, error } = await supabase
-        .from('search_templates')
-        .select('id, name, requirements')
-        .order('name')
-      
-      if (error) {
-        console.error('Error fetching templates:', error)
-      } else {
-        setTemplates(data || [])
+      try {
+        const response = await crawlerAPI.getTemplates();
+        setTemplates(response.templates || []);
+      } catch (error) {
+        console.error('Error fetching templates:', error);
       }
     }
-    fetchTemplates()
-  }, [])
+    fetchTemplates();
+  }, []);
 
   // Close dropdown when clicking outside
   useEffect(() => {
@@ -104,13 +100,8 @@ export default function RequirementsGeneratorPage() {
     if (!requirements || !selectedTemplate) return
 
     try {
-      // Update template in Supabase with new requirements
-      const { error } = await supabase
-        .from('search_templates')
-        .update({ requirements })
-        .eq('id', selectedTemplate)
-
-      if (error) throw error
+      // Update template in API with new requirements
+      await crawlerAPI.updateTemplate(selectedTemplate, { requirements });
 
       setSuccess('Requirements saved to template successfully!')
     } catch (err: any) {

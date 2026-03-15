@@ -4,7 +4,7 @@ import { Suspense, useEffect, useState } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { Sidebar } from '@/components/sidebar';
 import { TopHeader } from '@/components/top-header';
-import { supabase, type Lead, type Template } from '@/lib/supabase';
+import { crawlerAPI, type Lead, type Template } from '@/lib/api';
 import { ExternalLink, ChevronLeft, ChevronRight, Download, ChevronDown, ChevronUp, Search } from 'lucide-react';
 import toast from 'react-hot-toast';
 
@@ -104,11 +104,11 @@ function LeadsPageContent() {
 
   useEffect(() => {
     async function fetchTemplates() {
-      const { data, error } = await supabase.from('search_templates').select('*').order('name');
-      if (error) {
+      try {
+        const response = await crawlerAPI.getTemplates();
+        setTemplates(response.templates || []);
+      } catch (error) {
         console.error('Error fetching templates:', error);
-      } else {
-        setTemplates(data || []);
       }
     }
     fetchTemplates();
@@ -124,18 +124,15 @@ function LeadsPageContent() {
         return;
       }
 
-      const { data, error } = await supabase
-        .from('search_templates')
-        .select('requirements')
-        .eq('id', selectedTemplate)
-        .single();
-
-      if (error) {
+      try {
+        const template = await crawlerAPI.getTemplate(selectedTemplate);
+        if (template?.requirements?.requirements) {
+          setTemplateRequirements(template.requirements.requirements);
+        } else {
+          setTemplateRequirements([]);
+        }
+      } catch (error) {
         console.error('Error fetching template requirements:', error);
-        setTemplateRequirements([]);
-      } else if (data?.requirements?.requirements) {
-        setTemplateRequirements(data.requirements.requirements);
-      } else {
         setTemplateRequirements([]);
       }
     }
@@ -154,51 +151,21 @@ function LeadsPageContent() {
           return;
         }
 
-        // Fetch all data in batches (karena data > 1000)
-        let allData: Lead[] = [];
-        let from = 0;
-        const batchSize = 1000;
-        let hasMore = true;
-
-        let baseQuery = supabase.from('leads_list').select('*');
+        const itemsPerPage = isMobile ? ITEMS_PER_PAGE_MOBILE : ITEMS_PER_PAGE_DESKTOP;
         
-        // Filter berdasarkan template yang dipilih
-        baseQuery = baseQuery.eq('template_id', selectedTemplate);
+        const response = await crawlerAPI.getLeads({
+          template_id: selectedTemplate,
+          search: searchQuery.trim() || undefined,
+          sort_by: sortBy,
+          sort_order: sortOrder,
+          page: currentPage,
+          limit: itemsPerPage,
+        });
 
-        // Fetch in batches
-        while (hasMore) {
-          const { data: batchData, error: batchError } = await baseQuery
-            .order(sortBy, { ascending: sortOrder === 'asc' })
-            .range(from, from + batchSize - 1);
-
-          if (batchError) {
-            console.error('Error fetching leads:', batchError);
-            break;
-          }
-
-          if (batchData && batchData.length > 0) {
-            allData = [...allData, ...batchData];
-            from += batchSize;
-            
-            if (batchData.length < batchSize) {
-              hasMore = false;
-            }
-          } else {
-            hasMore = false;
-          }
-        }
-
-        // Filter by search query
-        let filteredData = allData;
-        if (searchQuery.trim()) {
-          filteredData = allData.filter(lead => 
-            lead.name?.toLowerCase().includes(searchQuery.toLowerCase())
-          );
-        }
-
-        // Filter by selected requirements
+        // Filter by selected requirements on client side (since API doesn't support this yet)
+        let filteredLeads = response.leads;
         if (selectedRequirements.length > 0) {
-          filteredData = filteredData.filter(lead => {
+          filteredLeads = response.leads.filter(lead => {
             if (!lead.scoring_data?.results) return false;
             
             // Check if lead matches ALL selected requirements
@@ -210,14 +177,8 @@ function LeadsPageContent() {
           });
         }
 
-        setTotalCount(filteredData.length);
-
-        // Paginate
-        const itemsPerPage = isMobile ? ITEMS_PER_PAGE_MOBILE : ITEMS_PER_PAGE_DESKTOP;
-        const startIndex = (currentPage - 1) * itemsPerPage;
-        const paginatedLeads = filteredData.slice(startIndex, startIndex + itemsPerPage);
-        
-        setLeads(paginatedLeads);
+        setLeads(filteredLeads);
+        setTotalCount(response.total);
       } catch (error) {
         console.error('Error fetching leads:', error);
       } finally {
@@ -315,33 +276,35 @@ function LeadsPageContent() {
     setSendingOutreach(true);
     
     try {
-      // Fetch all selected leads data from database (not just current page)
-      console.log('📋 Fetching selected leads data from database...');
-      const { data: selectedLeadsData, error: leadsError } = await supabase
-        .from('leads_list')
-        .select('id, name, profile_url')
-        .in('id', selectedLeads);
+      // Fetch all selected leads data from API (not just current page)
+      console.log('📋 Fetching selected leads data from API...');
+      const response = await crawlerAPI.getLeads({
+        template_id: selectedTemplate,
+      });
+      
+      const selectedLeadsData = response.leads.filter(lead => 
+        selectedLeads.includes(lead.id)
+      ).map(lead => ({
+        id: lead.id,
+        name: lead.name,
+        profile_url: lead.profile_url
+      }));
 
-      if (leadsError || !selectedLeadsData) {
-        console.error('❌ Error fetching leads:', leadsError);
-        toast.error('Failed to fetch selected leads');
+      if (selectedLeadsData.length === 0) {
+        console.error('❌ No selected leads found');
+        toast.error('No selected leads found');
         setSendingOutreach(false);
         return;
       }
 
-      console.log(`✅ Fetched ${selectedLeadsData.length} leads from database`);
+      console.log(`✅ Fetched ${selectedLeadsData.length} leads from API`);
 
-      // Fetch template note from database
-      console.log('📋 Fetching template note from database...');
-      const { data: templateData, error: templateError } = await supabase
-        .from('search_templates')
-        .select('note')
-        .eq('id', selectedTemplate)
-        .single();
+      // Fetch template note from API
+      console.log('📋 Fetching template note from API...');
+      const templateData = await crawlerAPI.getTemplate(selectedTemplate);
 
-      if (templateError || !templateData) {
-        console.error('❌ Error fetching template:', templateError);
-        toast.error('Failed to fetch message template');
+      if (!templateData?.note) {
+        toast.error('Template has no message configured');
         setSendingOutreach(false);
         return;
       }
@@ -376,23 +339,11 @@ function LeadsPageContent() {
       
       console.log(`🔗 API URL: ${apiUrl}`);
 
-      // Send to API
-      const response = await fetch(`${apiUrl}/api/outreach/send`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(payload)
-      });
+      // Send to API using crawlerAPI
+      const response = await crawlerAPI.sendOutreach(payload);
 
-      const result = await response.json();
-
-      if (!response.ok) {
-        throw new Error(result.detail || 'Failed to send outreach');
-      }
-
-      console.log('✅ API Response:', result);
-      toast.success(`Outreach queued for ${result.queued || result.valid_leads} lead(s)!`);
+      console.log('✅ API Response:', response);
+      toast.success(`Outreach queued for ${response.queued || response.valid_leads} lead(s)!`);
       
       // Clear selection after successful send
       setSelectedLeads([]);
@@ -410,69 +361,17 @@ function LeadsPageContent() {
   const exportToCSV = async () => {
     setExporting(true);
     try {
-      // Fetch all data in batches
-      let allData: Lead[] = [];
-      let from = 0;
-      const batchSize = 1000;
-      let hasMore = true;
-
-      let query = supabase.from('leads_list').select('*');
-
-      // Filter berdasarkan template yang dipilih (export CSV)
-      query = query.eq('template_id', selectedTemplate);
-
-      while (hasMore) {
-        const { data: batchData, error: batchError } = await query
-          .order('date', { ascending: false })
-          .range(from, from + batchSize - 1);
-
-        if (batchError) throw batchError;
-
-        if (batchData && batchData.length > 0) {
-          allData = [...allData, ...batchData];
-          from += batchSize;
-          
-          if (batchData.length < batchSize) {
-            hasMore = false;
-          }
-        } else {
-          hasMore = false;
-        }
-      }
-
-      if (allData.length === 0) {
-        toast.error('No data to export');
-        return;
-      }
-
-      const headers = ['Name', 'Connection Status', 'Score', 'Processed At', 'Profile URL', 'Note Sent', 'Sent At'];
-      const csvRows = [headers.join(',')];
-
-      allData.forEach(lead => {
-        const row = [
-          `"${lead.name || ''}"`,
-          lead.connection_status || '',
-          lead.score || '',
-          lead.processed_at || '',
-          lead.profile_url || '',
-          `"${lead.note_sent || ''}"`,
-          lead.sent_at || ''
-        ];
-        csvRows.push(row.join(','));
-      });
-
-      const csvContent = csvRows.join('\n');
-      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+      const downloadUrl = await crawlerAPI.exportLeads(selectedTemplate, 'csv');
+      
+      // Create download link
       const link = document.createElement('a');
-      const url = URL.createObjectURL(blob);
-
-      const templateName = templates.find(t => t.id === selectedTemplate)?.name || 'unknown';
-      link.setAttribute('href', url);
-      link.setAttribute('download', `leads_${templateName}_${new Date().toISOString().split('T')[0]}.csv`);
+      link.href = downloadUrl.download_url;
+      link.download = `leads_${templates.find(t => t.id === selectedTemplate)?.name || 'unknown'}_${new Date().toISOString().split('T')[0]}.csv`;
       link.style.visibility = 'hidden';
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
+      
       toast.success('CSV exported successfully!');
     } catch (error) {
       console.error('Error exporting CSV:', error);
@@ -486,53 +385,17 @@ function LeadsPageContent() {
   const exportToJSON = async () => {
     setExporting(true);
     try {
-      // Fetch all data in batches
-      let allData: Lead[] = [];
-      let from = 0;
-      const batchSize = 1000;
-      let hasMore = true;
-
-      let query = supabase.from('leads_list').select('*');
-
-      // Filter berdasarkan template yang dipilih (export JSON)
-      query = query.eq('template_id', selectedTemplate);
-
-      while (hasMore) {
-        const { data: batchData, error: batchError } = await query
-          .order('date', { ascending: false })
-          .range(from, from + batchSize - 1);
-
-        if (batchError) throw batchError;
-
-        if (batchData && batchData.length > 0) {
-          allData = [...allData, ...batchData];
-          from += batchSize;
-          
-          if (batchData.length < batchSize) {
-            hasMore = false;
-          }
-        } else {
-          hasMore = false;
-        }
-      }
-
-      if (allData.length === 0) {
-        toast.error('No data to export');
-        return;
-      }
-
-      const jsonContent = JSON.stringify(allData, null, 2);
-      const blob = new Blob([jsonContent], { type: 'application/json' });
+      const downloadUrl = await crawlerAPI.exportLeads(selectedTemplate, 'json');
+      
+      // Create download link
       const link = document.createElement('a');
-      const url = URL.createObjectURL(blob);
-
-      const templateName = templates.find(t => t.id === selectedTemplate)?.name || 'unknown';
-      link.setAttribute('href', url);
-      link.setAttribute('download', `leads_${templateName}_${new Date().toISOString().split('T')[0]}.json`);
+      link.href = downloadUrl.download_url;
+      link.download = `leads_${templates.find(t => t.id === selectedTemplate)?.name || 'unknown'}_${new Date().toISOString().split('T')[0]}.json`;
       link.style.visibility = 'hidden';
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
+      
       toast.success('JSON exported successfully!');
     } catch (error) {
       console.error('Error exporting JSON:', error);

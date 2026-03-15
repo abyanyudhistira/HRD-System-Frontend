@@ -5,7 +5,7 @@ import { Sidebar } from '@/components/sidebar';
 import { TopHeader } from '@/components/top-header';
 import { StatCard } from '@/components/stat-card';
 import { Users, FileText, Building2, TrendingUp, Clock, CheckCircle2, BarChart3, Percent } from 'lucide-react';
-import { supabase } from '@/lib/supabase';
+import { crawlerAPI } from '@/lib/api';
 
 interface LeadsByDate {
   date: string;
@@ -49,132 +49,32 @@ export default function DashboardPage() {
   useEffect(() => {
     async function fetchStats() {
       try {
-        const [leadsResult, templatesResult, companiesResult] = await Promise.all([
-          supabase.from('leads_list').select('*', { count: 'exact', head: true }),
-          supabase.from('search_templates').select('*', { count: 'exact', head: true }),
-          supabase.from('companies').select('*', { count: 'exact', head: true }),
-        ]);
-
+        const stats = await crawlerAPI.getDashboardStats();
+        
         setStats({
-          totalLeads: leadsResult.count || 0,
-          totalTemplates: templatesResult.count || 0,
-          totalCompanies: companiesResult.count || 0,
+          totalLeads: stats.leads_count || 0,
+          totalTemplates: stats.templates_count || 0,
+          totalCompanies: stats.companies_count || 0,
           loading: false,
         });
+
+        // Set chart data from API response
+        setLeadsByDate(stats.leads_by_date || []);
+        setStatusCounts(stats.status_counts || []);
+        setScoreRanges(stats.score_distribution || []);
+        setRecentLeads(stats.recent_leads || []);
+        setChartsLoading(false);
       } catch (error) {
         console.error('Error fetching stats:', error);
         setStats(prev => ({ ...prev, loading: false }));
+        setChartsLoading(false);
       }
     }
 
     fetchStats();
   }, []);
 
-  useEffect(() => {
-    async function fetchChartData() {
-      try {
-        // Fetch all leads data
-        const { data: leadsData } = await supabase
-          .from('leads_list')
-          .select('date, connection_status, profile_data, score')
-          .order('date', { ascending: false });
-
-        if (!leadsData || leadsData.length === 0) {
-          setChartsLoading(false);
-          return;
-        }
-
-        // Leads by date (last 4 months) - Generate all 4 months
-        const today = new Date();
-        today.setHours(23, 59, 59, 999); // End of today
-        const dateMap = new Map<string, number>();
-        
-        // Generate last 4 months (including current month)
-        for (let i = 3; i >= 0; i--) {
-          const date = new Date(today);
-          date.setMonth(today.getMonth() - i);
-          date.setDate(1); // First day of the month
-          date.setHours(0, 0, 0, 0);
-          const dateStr = date.toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
-          dateMap.set(dateStr, 0); // Initialize with 0
-        }
-        
-        // Count actual leads for each month (using 'date' field for when lead was crawled)
-        const fourMonthsAgo = new Date(today);
-        fourMonthsAgo.setMonth(today.getMonth() - 3); // 4 months including current month
-        fourMonthsAgo.setDate(1); // First day of the month
-        fourMonthsAgo.setHours(0, 0, 0, 0);
-        
-        console.log('=== LEADS TREND DEBUG ===');
-        console.log('Today:', today.toISOString());
-        console.log('Four months ago:', fourMonthsAgo.toISOString());
-        console.log('Total leads data:', leadsData.length);
-        
-        leadsData.forEach(lead => {
-          if (lead.date) {
-            const leadDate = new Date(lead.date);
-            if (leadDate >= fourMonthsAgo && leadDate <= today) {
-              const dateStr = leadDate.toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
-              const currentCount = dateMap.get(dateStr) || 0;
-              dateMap.set(dateStr, currentCount + 1);
-              console.log(`Lead crawled on ${dateStr}:`, lead.date);
-            }
-          }
-        });
-        
-        const leadsByDateArray = Array.from(dateMap, ([date, count]) => ({ date, count }));
-        console.log('Final leads by date:', leadsByDateArray);
-        setLeadsByDate(leadsByDateArray);
-
-        // Connection status distribution (pending, scraped, success)
-        const statusMap = new Map<string, number>();
-        leadsData.forEach(lead => {
-          const status = lead.connection_status || 'pending';
-          statusMap.set(status, (statusMap.get(status) || 0) + 1);
-        });
-        setStatusCounts(Array.from(statusMap, ([connection_status, count]) => ({ connection_status, count })));
-
-        // Score distribution by ranges (score is already in percentage)
-        const ranges = [
-          { range: '0-49%', min: 0, max: 49, color: '#ef4444', count: 0, percentage: 0 },
-          { range: '50-79%', min: 50, max: 79, color: '#eab308', count: 0, percentage: 0 },
-          { range: '80-100%', min: 80, max: 100, color: '#10b981', count: 0, percentage: 0 }
-        ];
-
-        leadsData.forEach(lead => {
-          const score = lead.score;
-          // Only count if score exists and is not null
-          if (score !== null && score !== undefined) {
-            if (score < 50) {
-              ranges[0].count++;
-            } else if (score >= 50 && score < 80) {
-              ranges[1].count++;
-            } else if (score >= 80) {
-              ranges[2].count++;
-            }
-          }
-        });
-
-        console.log('Score ranges:', ranges); // Debug log
-        setScoreRanges(ranges);
-
-        // Recent leads (top 5)
-        const { data: recentData } = await supabase
-          .from('leads_list')
-          .select('id, name, connection_status, processed_at, profile_data')
-          .order('processed_at', { ascending: false })
-          .limit(5);
-
-        setRecentLeads(recentData || []);
-        setChartsLoading(false);
-      } catch (error) {
-        console.error('Error fetching chart data:', error);
-        setChartsLoading(false);
-      }
-    }
-
-    fetchChartData();
-  }, []);
+  // Remove the second useEffect since we're getting all data from getDashboardStats
 
   const getStatusColor = (status: string) => {
     switch (status?.toLowerCase()) {

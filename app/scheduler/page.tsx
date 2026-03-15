@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react'
 import { Sidebar } from '@/components/sidebar'
 import { TopHeader } from '@/components/top-header'
 import { Plus, Play, Pause, Trash2, Clock, Calendar, X, Edit, PlayCircle } from 'lucide-react'
-import { supabase } from '@/lib/supabase'
+
 import { crawlerAPI, Schedule } from '@/lib/api'
 import toast from 'react-hot-toast'
 

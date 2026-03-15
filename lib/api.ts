@@ -40,11 +40,183 @@ export type ScheduleUpdate = {
   status: 'active' | 'inactive';
 };
 
+// Auth Types
+export type LoginRequest = {
+  email: string;
+  password: string;
+};
+
+export type LoginResponse = {
+  success: boolean;
+  token: string;
+  user: {
+    id: string;
+    email: string;
+    name: string;
+    role: string;
+    created_at: string;
+  };
+};
+
+export type User = {
+  id: string;
+  email: string;
+  name: string;
+  role: string;
+  created_at: string;
+};
+
+// Stats Types
+export type DashboardStats = {
+  leads_count: number;
+  templates_count: number;
+  companies_count: number;
+  leads_by_date: Array<{ date: string; count: number }>;
+  status_counts: Array<{ connection_status: string; count: number }>;
+  score_distribution: Array<{ range: string; count: number }>;
+  recent_leads: Array<any>;
+};
+
+// Lead Types
+export type Lead = {
+  id: string;
+  name: string;
+  connection_status: string;
+  score: number;
+  processed_at: string;
+  profile_url: string;
+  note_sent?: string;
+  sent_at?: string;
+  template_id: string;
+  profile_data?: any;
+  scoring_data?: any;
+};
+
+// Template Types
+export type Template = {
+  id: string;
+  name: string;
+  requirements?: any;
+  note?: string;
+  company_id: string;
+  created_at: string;
+};
+
+export type TemplateUpdate = {
+  name?: string;
+  requirements?: any;
+  note?: string;
+};
+
+// Company Types
+export type Company = {
+  id: string;
+  name: string;
+  created_at: string;
+};
+
+export type CompanyCreate = {
+  name: string;
+};
+
+// Requirement Types
+export type Requirement = {
+  id: string;
+  label: string;
+  type: string;
+  value?: any;
+};
+
 class CrawlerAPI {
   private baseURL: string;
+  private token: string | null = null;
 
   constructor(baseURL: string = API_BASE_URL) {
     this.baseURL = baseURL;
+    // Load token from localStorage if available
+    if (typeof window !== 'undefined') {
+      this.token = localStorage.getItem('auth_token');
+      
+      // Fallback: try to get from cookie if localStorage is empty
+      if (!this.token) {
+        const cookies = document.cookie.split(';');
+        const authCookie = cookies.find(cookie => cookie.trim().startsWith('auth_token='));
+        if (authCookie) {
+          this.token = authCookie.split('=')[1];
+          // Save back to localStorage for consistency
+          localStorage.setItem('auth_token', this.token);
+        }
+      }
+      
+      console.log('Constructor loaded token from localStorage:', this.token);
+    }
+  }
+
+  private getAuthHeaders(): Record<string, string> {
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+    };
+    
+    console.log('Getting auth headers, current token:', this.token);
+    
+    if (this.token) {
+      headers['Authorization'] = `Bearer ${this.token}`;
+      console.log('Added Authorization header:', headers['Authorization']);
+    } else {
+      console.log('No token available for auth headers');
+    }
+    
+    return headers;
+  }
+
+  setToken(token: string) {
+    console.log('Setting token:', token);
+    this.token = token;
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('auth_token', token);
+      console.log('Token saved to localStorage:', localStorage.getItem('auth_token'));
+      
+      // Set cookie with proper format
+      const expires = new Date();
+      expires.setTime(expires.getTime() + (7 * 24 * 60 * 60 * 1000)); // 7 days
+      const cookieString = `auth_token=${token}; expires=${expires.toUTCString()}; path=/; SameSite=Lax`;
+      console.log('Setting cookie:', cookieString);
+      document.cookie = cookieString;
+      
+      // Verify cookie was set
+      console.log('All cookies after setting:', document.cookie);
+      console.log('Current instance token:', this.token);
+    }
+  }
+
+  clearToken() {
+    this.token = null;
+    if (typeof window !== 'undefined') {
+      localStorage.removeItem('auth_token');
+      // Clear cookie properly
+      document.cookie = 'auth_token=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/; SameSite=Lax';
+    }
+  }
+
+  getCurrentToken(): string | null {
+    return this.token;
+  }
+
+  reloadToken(): void {
+    if (typeof window !== 'undefined') {
+      this.token = localStorage.getItem('auth_token');
+      console.log('Token reloaded from localStorage:', this.token);
+    }
+  }
+
+  debugTokenState(): void {
+    console.log('=== TOKEN DEBUG ===');
+    console.log('Instance token:', this.token);
+    if (typeof window !== 'undefined') {
+      console.log('localStorage token:', localStorage.getItem('auth_token'));
+      console.log('Document cookies:', document.cookie);
+    }
+    console.log('==================');
   }
 
   private async request<T>(
@@ -57,7 +229,7 @@ class CrawlerAPI {
       const response = await fetch(url, {
         ...options,
         headers: {
-          'Content-Type': 'application/json',
+          ...this.getAuthHeaders(),
           ...options?.headers,
         },
       });
@@ -90,6 +262,117 @@ class CrawlerAPI {
 
   async getQueueStatus() {
     return this.request<any>('/api/schedules/queue/status');
+  }
+
+  // ===== AUTHENTICATION =====
+  async login(data: LoginRequest) {
+    const response = await this.request<LoginResponse>('/api/auth/login', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+    
+    console.log('Login API response:', response);
+    console.log('About to set token:', response.token);
+    
+    // Store token after successful login
+    this.setToken(response.token);
+    
+    console.log('Token set, current token:', this.token);
+    return response;
+  }
+
+  async getMe() {
+    return this.request<User>('/api/auth/me');
+  }
+
+  async logout() {
+    const response = await this.request<{ message: string }>('/api/auth/logout', {
+      method: 'POST',
+    });
+    
+    // Clear token after logout
+    this.clearToken();
+    return response;
+  }
+
+  // ===== DASHBOARD STATS =====
+  async getDashboardStats() {
+    return this.request<DashboardStats>('/api/stats');
+  }
+
+  async getLeadsCount() {
+    return this.request<{ count: number }>('/api/stats/leads');
+  }
+
+  async getTemplatesCount() {
+    return this.request<{ count: number }>('/api/stats/templates');
+  }
+
+  async getCompaniesCount() {
+    return this.request<{ count: number }>('/api/stats/companies');
+  }
+
+  // ===== LEADS MANAGEMENT =====
+  async getLeads(params?: {
+    template_id?: string;
+    search?: string;
+    sort_by?: 'processed_at' | 'score';
+    sort_order?: 'asc' | 'desc';
+    page?: number;
+    limit?: number;
+  }) {
+    const searchParams = new URLSearchParams();
+    if (params?.template_id) searchParams.set('template_id', params.template_id);
+    if (params?.search) searchParams.set('search', params.search);
+    if (params?.sort_by) searchParams.set('sort_by', params.sort_by);
+    if (params?.sort_order) searchParams.set('sort_order', params.sort_order);
+    if (params?.page) searchParams.set('page', params.page.toString());
+    if (params?.limit) searchParams.set('limit', params.limit.toString());
+
+    const queryString = searchParams.toString();
+    const endpoint = queryString ? `/api/leads?${queryString}` : '/api/leads';
+    
+    return this.request<{
+      leads: Lead[];
+      total: number;
+      page: number;
+      limit: number;
+      total_pages: number;
+    }>(endpoint);
+  }
+
+  async exportLeads(templateId: string, format: 'csv' | 'json') {
+    return this.request<{ download_url: string }>(`/api/leads/export?template_id=${templateId}&format=${format}`);
+  }
+
+  // ===== COMPANIES MANAGEMENT =====
+  async getCompanies() {
+    return this.request<{ companies: Company[] }>('/api/companies');
+  }
+
+  async createCompany(data: CompanyCreate) {
+    return this.request<Company>('/api/companies', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  // ===== TEMPLATES MANAGEMENT =====
+  async getTemplate(templateId: string) {
+    return this.request<Template>(`/api/templates/${templateId}`);
+  }
+
+  async updateTemplate(templateId: string, data: TemplateUpdate) {
+    return this.request<Template>(`/api/templates/${templateId}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async deleteTemplate(templateId: string) {
+    return this.request<{ message: string }>(`/api/templates/${templateId}`, {
+      method: 'DELETE',
+    });
   }
 
   // ===== REQUIREMENTS TEMPLATES =====

@@ -2,8 +2,8 @@
 
 import { useState, useEffect } from 'react';
 import { X, Eye, Clock, Zap, AlertCircle } from 'lucide-react';
-import { supabase } from '@/lib/supabase';
-import type { Requirement } from '@/lib/supabase';
+import { crawlerAPI } from '@/lib/api';
+import type { Requirement } from '@/lib/api';
 import toast from 'react-hot-toast';
 
 type Schedule = {

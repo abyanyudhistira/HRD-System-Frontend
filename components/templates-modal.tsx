@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { supabase, type Template } from '@/lib/supabase';
+import { crawlerAPI, type Template } from '@/lib/api';
 import { X, Search, FileText, ChevronLeft, ChevronRight } from 'lucide-react';
 import { RequirementsViewModal } from './requirements-view-modal';
 
@@ -41,19 +41,14 @@ export function TemplatesModal({ companyId, companyName, isOpen, onClose }: Temp
   async function fetchTemplates() {
     setLoading(true);
     try {
-      const { data, error } = await supabase
-        .from('search_templates')
-        .select('*')
-        .eq('company_id', companyId)
-        .order('created_at', { ascending: false });
-
-      if (error) {
-        console.error('Error fetching templates in modal:', error);
-      } else {
-        console.log('Templates in modal:', data);
-        setTemplates(data || []);
-        setFilteredTemplates(data || []);
-      }
+      const response = await crawlerAPI.getTemplates();
+      const companyTemplates = (response.templates || []).filter(
+        template => template.company_id === companyId
+      );
+      
+      console.log('Templates in modal:', companyTemplates);
+      setTemplates(companyTemplates);
+      setFilteredTemplates(companyTemplates);
     } catch (error) {
       console.error('Error fetching templates:', error);
     } finally {

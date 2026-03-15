@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import { Sidebar } from '@/components/sidebar';
 import { TopHeader } from '@/components/top-header';
 import { TemplatesModal } from '@/components/templates-modal';
-import { supabase, type Company } from '@/lib/supabase';
+import { crawlerAPI, type Company } from '@/lib/api';
 import { Building2, ChevronLeft, ChevronRight, Search, ArrowUpAZ, ArrowDownZA } from 'lucide-react';
 import toast from 'react-hot-toast';
 
@@ -35,28 +35,17 @@ export default function CompanyPage() {
       setLoading(true);
       console.log('Starting to fetch companies...');
       try {
-        // Test koneksi dulu
-        const testQuery = await supabase.from('companies').select('count');
-        console.log('Test query result:', testQuery);
-
-        const { data, error } = await supabase
-          .from('companies')
-          .select('*')
-          .order('created_at', { ascending: false });
-
-        console.log('Full response:', { data, error });
-
-        if (error) {
-          console.error('Supabase error:', error);
-          toast.error(`Error: ${error.message}`);
-        } else {
-          console.log('Companies data:', data);
-          console.log('Number of companies:', data?.length);
-          setCompanies(data || []);
-          setFilteredCompanies(data || []);
-        }
+        const response = await crawlerAPI.getCompanies();
+        console.log('Companies response:', response);
+        
+        const companiesData = response.companies || [];
+        console.log('Companies data:', companiesData);
+        console.log('Number of companies:', companiesData.length);
+        
+        setCompanies(companiesData);
+        setFilteredCompanies(companiesData);
       } catch (error) {
-        console.error('Catch error:', error);
+        console.error('Error fetching companies:', error);
         toast.error(`Failed to load companies`);
       } finally {
         setLoading(false);

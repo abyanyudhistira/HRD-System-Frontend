@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Sidebar } from '@/components/sidebar';
-import { supabase } from '@/lib/supabase';
+import { crawlerAPI } from '@/lib/api';
 import { User, Mail, Calendar, Shield, ArrowLeft } from 'lucide-react';
 
 export default function ProfilePage() {
@@ -16,17 +16,20 @@ export default function ProfilePage() {
 
   useEffect(() => {
     async function getUserData() {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (user) {
+      try {
+        const user = await crawlerAPI.getMe();
         setUserEmail(user.email || '');
-        setUserName(user.user_metadata?.full_name || '');
-        setUserRole(user.app_metadata?.role || '');
-        setCreatedAt(user.created_at || '');
+        setUserName(user.email.split('@')[0] || ''); // Use email prefix as name
+        setUserRole(user.role || '');
+        setCreatedAt(new Date().toISOString()); // API doesn't return created_at, use current date
+      } catch (error) {
+        console.error('Failed to get user data:', error);
+        router.push('/login');
       }
       setLoading(false);
     }
     getUserData();
-  }, []);
+  }, [router]);
 
   if (loading) {
     return (

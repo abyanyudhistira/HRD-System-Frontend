@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import { Sidebar } from '@/components/sidebar';
 import { TopHeader } from '@/components/top-header';
 import { RequirementsViewModal } from '@/components/requirements-view-modal';
-import { supabase } from '@/lib/supabase';
+import { crawlerAPI } from '@/lib/api';
 import { Search, ChevronDown, ChevronUp, Edit, Trash2, ChevronLeft, ChevronRight, X } from 'lucide-react';
 import toast from 'react-hot-toast';
 
@@ -84,29 +84,14 @@ export default function RequirementsListPage() {
   async function fetchData() {
     setLoading(true);
     try {
-      // Fetch templates with company info
-      const { data: templatesData, error: templatesError } = await supabase
-        .from('search_templates')
-        .select(`
-          *,
-          companies (
-            name
-          )
-        `)
-        .order('created_at', { ascending: false });
+      // Fetch templates and companies from API
+      const [templatesResponse, companiesResponse] = await Promise.all([
+        crawlerAPI.getTemplates(),
+        crawlerAPI.getCompanies()
+      ]);
 
-      if (templatesError) throw templatesError;
-
-      // Fetch companies for filter
-      const { data: companiesData, error: companiesError } = await supabase
-        .from('companies')
-        .select('id, name')
-        .order('name');
-
-      if (companiesError) throw companiesError;
-
-      setTemplates(templatesData || []);
-      setCompanies(companiesData || []);
+      setTemplates(templatesResponse.templates || []);
+      setCompanies(companiesResponse.companies || []);
     } catch (error) {
       console.error('Error fetching data:', error);
       toast.error('Failed to load templates');
@@ -153,12 +138,7 @@ export default function RequirementsListPage() {
     
     setDeleting(true)
     try {
-      const { error } = await supabase
-        .from('search_templates')
-        .delete()
-        .eq('id', id);
-
-      if (error) throw error;
+      await crawlerAPI.deleteTemplate(id);
 
       toast.success('Template deleted successfully');
       setDeleteConfirm(null);
@@ -189,12 +169,7 @@ export default function RequirementsListPage() {
     try {
       const parsedJson = JSON.parse(editingJson);
       
-      const { error } = await supabase
-        .from('search_templates')
-        .update({ requirements: parsedJson })
-        .eq('id', selectedTemplate.id);
-
-      if (error) throw error;
+      await crawlerAPI.updateTemplate(selectedTemplate.id, { requirements: parsedJson });
 
       toast.success('Requirements updated successfully');
       setShowEditModal(false);

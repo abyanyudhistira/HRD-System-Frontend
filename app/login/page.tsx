@@ -4,7 +4,7 @@ import { useState, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import Image from 'next/image';
 import { Mail, Lock, Eye, EyeOff, AlertCircle } from 'lucide-react';
-import { supabase } from '@/lib/supabase';
+import { crawlerAPI } from '@/lib/api';
 import toast from 'react-hot-toast';
 import RobotCatMascot from '@/components/RobotCatMascot';
 
@@ -26,34 +26,45 @@ export default function LoginPage() {
     setError(null);
     
     try {
-      const { data, error: signInError } = await supabase.auth.signInWithPassword({
+      const response = await crawlerAPI.login({
         email,
         password,
       });
 
-      if (signInError) throw signInError;
-      if (!data.user) throw new Error('No user data returned');
+      console.log('Login response:', response);
 
-      const role = data.user.user_metadata?.role || 
-                   (data.user as any).app_metadata?.role || 
-                   (data.user as any).raw_app_meta_data?.role;
-
-      console.log('User role:', role);
-      console.log('User metadata:', data.user.user_metadata);
-      console.log('App metadata:', (data.user as any).app_metadata);
-
-      if (role !== 'admin') {
-        await supabase.auth.signOut();
-        throw new Error(`Access denied. Admin privileges required. Your role: ${role || 'none'}`);
+      // Check if response has the expected structure
+      if (!response.token) {
+        console.error('No token in response:', response);
+        throw new Error('Login response missing token');
       }
 
+      if (response.user.role !== 'admin') {
+        throw new Error(`Access denied. Admin privileges required. Your role: ${response.user.role || 'none'}`);
+      }
+
+      // Explicitly ensure token is set (redundant but safe)
+      console.log('Token from response:', response.token);
+      crawlerAPI.setToken(response.token);
+      
+      // Force reload token to ensure it's properly set
+      crawlerAPI.reloadToken();
+      
+      // Verify token was actually set
+      console.log('Token after setting:', localStorage.getItem('auth_token'));
+      console.log('Cookie after setting:', document.cookie);
+      console.log('API instance token:', crawlerAPI.getCurrentToken());
+
+      // Store user data in localStorage for sidebar
+      localStorage.setItem('user-email', response.user.email);
       sessionStorage.setItem('showWelcomeToast', 'true');
       
-      // Wait for cookies to be set properly
-      await new Promise(resolve => setTimeout(resolve, 500));
-      
-      // Use hard redirect to ensure middleware picks up the new session
-      window.location.href = '/';
+      // Small delay to ensure cookie is set
+      setTimeout(() => {
+        console.log('Before redirect - Final token check:', crawlerAPI.getCurrentToken());
+        crawlerAPI.debugTokenState();
+        router.push('/');
+      }, 100);
       
     } catch (err: any) {
       setError(err.message || 'Invalid email or password');

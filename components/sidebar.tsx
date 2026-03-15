@@ -6,7 +6,7 @@ import { usePathname, useRouter } from 'next/navigation';
 import { LayoutDashboard, Users, Building2, FileText, Calendar, ChevronLeft, ChevronRight, Zap, LogOut, ChevronDown, Settings, List, Bot } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useState, useEffect, useRef } from 'react';
-import { supabase } from '@/lib/supabase';
+import { crawlerAPI } from '@/lib/api';
 import toast from 'react-hot-toast';
 
 const navigation = [
@@ -59,10 +59,10 @@ export function Sidebar() {
         return;
       }
 
-      const { data: { user } } = await supabase.auth.getUser();
-      if (user) {
+      try {
+        const user = await crawlerAPI.getMe();
         const email = user.email || '';
-        const name = user.user_metadata?.full_name || '';
+        const name = user.email.split('@')[0] || ''; // Use email prefix as name
         
         setUserEmail(email);
         setUserName(name);
@@ -72,10 +72,14 @@ export function Sidebar() {
         localStorage.setItem('user-name', name);
         
         hasFetchedUser.current = true;
+      } catch (error) {
+        console.error('Failed to get user data:', error);
+        // If token is invalid, redirect to login
+        router.push('/login');
       }
     }
     getUserData();
-  }, [userEmail, userName]);
+  }, [userEmail, userName, router]);
 
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
@@ -113,7 +117,7 @@ export function Sidebar() {
 
   const handleLogout = async () => {
     try {
-      await supabase.auth.signOut();
+      await crawlerAPI.logout();
       // Clear cached user data
       localStorage.removeItem('user-email');
       localStorage.removeItem('user-name');
