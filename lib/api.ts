@@ -161,7 +161,10 @@ class CrawlerAPI {
         }
       }
       
-      console.log('Constructor loaded token from localStorage:', this.token);
+      console.log('CrawlerAPI Constructor - Token loaded:', !!this.token);
+      if (this.token) {
+        console.log('Token preview:', this.token.substring(0, 20) + '...');
+      }
     }
   }
 

@@ -59,6 +59,13 @@ export function Sidebar() {
         return;
       }
 
+      // Check if token exists before making API call
+      const token = crawlerAPI.getCurrentToken();
+      if (!token) {
+        console.log('No token found, skipping user data fetch');
+        return;
+      }
+
       try {
         const user = await crawlerAPI.getMe();
         const email = user.email || '';
@@ -74,8 +81,15 @@ export function Sidebar() {
         hasFetchedUser.current = true;
       } catch (error) {
         console.error('Failed to get user data:', error);
-        // If token is invalid, redirect to login
-        router.push('/login');
+        
+        // Only redirect if it's a 401/403 error (invalid token)
+        if (error instanceof Error && (error.message.includes('401') || error.message.includes('403') || error.message.includes('Unauthorized'))) {
+          console.log('Token invalid, clearing and redirecting to login');
+          crawlerAPI.clearToken();
+          router.push('/login');
+        } else {
+          console.log('Network or other error, not redirecting');
+        }
       }
     }
     getUserData();
