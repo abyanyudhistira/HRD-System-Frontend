@@ -68,13 +68,26 @@ export type User = {
 
 // Stats Types
 export type DashboardStats = {
-  leads_count: number;
-  templates_count: number;
-  companies_count: number;
-  leads_by_date: Array<{ date: string; count: number }>;
-  status_counts: Array<{ connection_status: string; count: number }>;
-  score_distribution: Array<{ range: string; count: number }>;
-  recent_leads: Array<any>;
+  success: boolean;
+  data: {
+    counts: {
+      leads_count: number;
+      templates_count: number;
+      companies_count: number;
+      schedules_count: number;
+    };
+    leads_by_status: {
+      connected: number;
+      pending: number;
+      not_connected: number;
+    };
+    recent_leads: Array<{ date: string; count: number }>;
+  };
+};
+
+export type CountResponse = {
+  success: boolean;
+  count: number;
 };
 
 // Lead Types
@@ -301,15 +314,15 @@ class CrawlerAPI {
   }
 
   async getLeadsCount() {
-    return this.request<{ count: number }>('/api/stats/leads');
+    return this.request<CountResponse>('/api/stats/leads');
   }
 
   async getTemplatesCount() {
-    return this.request<{ count: number }>('/api/stats/templates');
+    return this.request<CountResponse>('/api/stats/templates');
   }
 
   async getCompaniesCount() {
-    return this.request<{ count: number }>('/api/stats/companies');
+    return this.request<CountResponse>('/api/stats/companies');
   }
 
   // ===== LEADS MANAGEMENT =====

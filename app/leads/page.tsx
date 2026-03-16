@@ -105,8 +105,8 @@ function LeadsPageContent() {
   useEffect(() => {
     async function fetchTemplates() {
       try {
-        const response = await crawlerAPI.getTemplates();
-        setTemplates(response.templates || []);
+        const templatesResponse = await crawlerAPI.getTemplates();
+        setTemplates(templatesResponse.templates || []);
       } catch (error) {
         console.error('Error fetching templates:', error);
       }
@@ -153,7 +153,7 @@ function LeadsPageContent() {
 
         const itemsPerPage = isMobile ? ITEMS_PER_PAGE_MOBILE : ITEMS_PER_PAGE_DESKTOP;
         
-        const response = await crawlerAPI.getLeads({
+        const leadsResponse = await crawlerAPI.getLeads({
           template_id: selectedTemplate,
           search: searchQuery.trim() || undefined,
           sort_by: sortBy,
@@ -163,9 +163,9 @@ function LeadsPageContent() {
         });
 
         // Filter by selected requirements on client side (since API doesn't support this yet)
-        let filteredLeads = response.leads;
+        let filteredLeads = leadsResponse.leads;
         if (selectedRequirements.length > 0) {
-          filteredLeads = response.leads.filter(lead => {
+          filteredLeads = leadsResponse.leads.filter(lead => {
             if (!lead.scoring_data?.results) return false;
             
             // Check if lead matches ALL selected requirements
@@ -178,7 +178,7 @@ function LeadsPageContent() {
         }
 
         setLeads(filteredLeads);
-        setTotalCount(response.total);
+        setTotalCount(leadsResponse.total);
       } catch (error) {
         console.error('Error fetching leads:', error);
       } finally {
@@ -278,11 +278,11 @@ function LeadsPageContent() {
     try {
       // Fetch all selected leads data from API (not just current page)
       console.log('📋 Fetching selected leads data from API...');
-      const response = await crawlerAPI.getLeads({
+      const allLeadsResponse = await crawlerAPI.getLeads({
         template_id: selectedTemplate,
       });
       
-      const selectedLeadsData = response.leads.filter(lead => 
+      const selectedLeadsData = allLeadsResponse.leads.filter(lead => 
         selectedLeads.includes(lead.id)
       ).map(lead => ({
         id: lead.id,
@@ -340,10 +340,10 @@ function LeadsPageContent() {
       console.log(`🔗 API URL: ${apiUrl}`);
 
       // Send to API using crawlerAPI
-      const response = await crawlerAPI.sendOutreach(payload);
+      const outreachResponse = await crawlerAPI.sendOutreach(payload);
 
-      console.log('✅ API Response:', response);
-      toast.success(`Outreach queued for ${response.queued || response.valid_leads} lead(s)!`);
+      console.log('✅ API Response:', outreachResponse);
+      toast.success(`Outreach queued for ${outreachResponse.queued || outreachResponse.valid_leads} lead(s)!`);
       
       // Clear selection after successful send
       setSelectedLeads([]);
