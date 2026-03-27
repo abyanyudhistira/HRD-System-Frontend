@@ -37,25 +37,25 @@ export function Sidebar() {
   });
   const [showProfileDropdown, setShowProfileDropdown] = useState(false);
   const [showRequirementsDropdown, setShowRequirementsDropdown] = useState(false);
-  const [userEmail, setUserEmail] = useState<string>(() => {
-    if (typeof window !== 'undefined') {
-      return localStorage.getItem('user-email') || '';
-    }
-    return '';
-  });
-  const [userName, setUserName] = useState<string>(() => {
-    if (typeof window !== 'undefined') {
-      return localStorage.getItem('user-name') || '';
-    }
-    return '';
-  });
+  const [userEmail, setUserEmail] = useState<string>('');
+  const [userName, setUserName] = useState<string>('');
+  const [userRole, setUserRole] = useState<string>('');
+  const [isHydrated, setIsHydrated] = useState(false);
   const profileDropdownRef = useRef<HTMLDivElement>(null);
   const hasFetchedUser = useRef(false);
 
   useEffect(() => {
+    // Set hydrated state and load cached data
+    setIsHydrated(true);
+    setUserEmail(localStorage.getItem('user-email') || '');
+    setUserName(localStorage.getItem('user-name') || '');
+    setUserRole(localStorage.getItem('user-role') || '');
+  }, []);
+
+  useEffect(() => {
     async function getUserData() {
-      // Skip if already fetched or data exists
-      if (hasFetchedUser.current || (userEmail && userName)) {
+      // Skip if not hydrated yet or already fetched or data exists
+      if (!isHydrated || hasFetchedUser.current || (userEmail && userName)) {
         return;
       }
 
@@ -69,14 +69,17 @@ export function Sidebar() {
       try {
         const user = await crawlerAPI.getMe();
         const email = user.email || '';
-        const name = user.email.split('@')[0] || ''; // Use email prefix as name
+        const name = user.name || user.email.split('@')[0] || ''; // Use name from API, fallback to email prefix
+        const role = user.role || '';
         
         setUserEmail(email);
         setUserName(name);
+        setUserRole(role);
         
         // Cache in localStorage
         localStorage.setItem('user-email', email);
         localStorage.setItem('user-name', name);
+        localStorage.setItem('user-role', role);
         
         hasFetchedUser.current = true;
       } catch (error) {
@@ -93,7 +96,7 @@ export function Sidebar() {
       }
     }
     getUserData();
-  }, [userEmail, userName, router]);
+  }, [isHydrated, userEmail, userName, userRole, router]);
 
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
@@ -135,6 +138,7 @@ export function Sidebar() {
       // Clear cached user data
       localStorage.removeItem('user-email');
       localStorage.removeItem('user-name');
+      localStorage.removeItem('user-role');
       toast.success('Logged out successfully');
       router.push('/login');
     } catch (error) {
@@ -283,8 +287,12 @@ export function Sidebar() {
                 <div className="absolute inset-0 rounded-full bg-blue-400 opacity-0 group-hover:opacity-20 transition-opacity"></div>
               </div>
               <div className="flex-1 min-w-0 text-left">
-                <p className="text-sm font-medium text-white truncate group-hover:text-blue-400 transition-colors">{userName}</p>
-                <p className="text-xs text-gray-500 truncate">{userEmail}</p>
+                <p className="text-sm font-medium text-white truncate group-hover:text-blue-400 transition-colors">
+                  {isHydrated ? userName || 'Loading...' : 'Loading...'}
+                </p>
+                <p className="text-xs text-gray-500 truncate">
+                  {isHydrated ? userEmail : ''}
+                </p>
               </div>
               <ChevronDown className={cn(
                 'h-4 w-4 text-gray-500 transition-all flex-shrink-0 group-hover:text-gray-400',
@@ -340,7 +348,7 @@ export function Sidebar() {
             <button
               onClick={handleProfileClick}
               className="relative flex h-10 w-10 items-center justify-center rounded-full bg-gradient-to-br from-blue-200 to-white  mx-auto hover:scale-110 transition-transform group overflow-hidden"
-              title={userName}
+              title={isHydrated ? userName : 'User Profile'}
             >
               <Image 
                 src="/logo-sarana-without-text.png" 

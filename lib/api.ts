@@ -59,11 +59,16 @@ export type LoginResponse = {
 };
 
 export type User = {
-  id: string;
+  id: number; // Changed from string to number to match the payload
   email: string;
   name: string;
   role: string;
   created_at: string;
+};
+
+export type AuthMeResponse = {
+  success: boolean;
+  user: User;
 };
 
 // Stats Types
@@ -109,9 +114,21 @@ export type Lead = {
 export type Template = {
   id: string;
   name: string;
-  requirements?: any;
-  note?: string;
   company_id: string;
+  job_title?: string;
+  url?: string;
+  note?: string;
+  job_description?: string;
+  requirements?: {
+    position: string;
+    requirements: Array<{
+      id: string;
+      type: string;
+      label: string;
+      value: string | number;
+    }>;
+  };
+  external_source?: string;
   created_at: string;
 };
 
@@ -298,7 +315,8 @@ class CrawlerAPI {
   }
 
   async getMe() {
-    return this.request<User>('/api/auth/me');
+    const response = await this.request<AuthMeResponse>('/api/auth/me');
+    return response.user; // Extract user from the response
   }
 
   async logout() {
@@ -348,13 +366,30 @@ class CrawlerAPI {
     const queryString = searchParams.toString();
     const endpoint = queryString ? `/api/leads?${queryString}` : '/api/leads';
     
-    return this.request<{
-      leads: Lead[];
-      total: number;
-      page: number;
-      limit: number;
-      total_pages: number;
+    const response = await this.request<{
+      success: boolean;
+      count: number;
+      leads: {
+        leads: Lead[];
+        pagination: {
+          total_count: number;
+          total_pages: number;
+          current_page: number;
+          per_page: number;
+          has_next: boolean;
+          has_prev: boolean;
+        };
+      };
     }>(endpoint);
+
+    // Transform the nested response to the expected flat structure
+    return {
+      leads: response.leads.leads,
+      total: response.leads.pagination.total_count,
+      page: response.leads.pagination.current_page,
+      limit: response.leads.pagination.per_page,
+      total_pages: response.leads.pagination.total_pages,
+    };
   }
 
   async exportLeads(templateId: string, format: 'csv' | 'json') {
@@ -375,7 +410,13 @@ class CrawlerAPI {
 
   // ===== TEMPLATES MANAGEMENT =====
   async getTemplate(templateId: string) {
-    return this.request<Template>(`/api/templates/${templateId}`);
+    const response = await this.request<{
+      success: boolean;
+      template: Template;
+    }>(`/api/templates/${templateId}`);
+    
+    // Return the nested template object
+    return response.template;
   }
 
   async updateTemplate(templateId: string, data: TemplateUpdate) {

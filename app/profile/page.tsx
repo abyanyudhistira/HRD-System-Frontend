@@ -8,6 +8,7 @@ import { User, Mail, Calendar, Shield, ArrowLeft } from 'lucide-react';
 
 export default function ProfilePage() {
   const router = useRouter();
+  const [userId, setUserId] = useState<number | null>(null);
   const [userEmail, setUserEmail] = useState<string>('');
   const [userName, setUserName] = useState<string>('');
   const [userRole, setUserRole] = useState<string>('');
@@ -26,10 +27,11 @@ export default function ProfilePage() {
 
       try {
         const user = await crawlerAPI.getMe();
+        setUserId(user.id);
         setUserEmail(user.email || '');
-        setUserName(user.email.split('@')[0] || ''); // Use email prefix as name
+        setUserName(user.name || user.email.split('@')[0] || ''); // Use name from API, fallback to email prefix
         setUserRole(user.role || '');
-        setCreatedAt(new Date().toISOString()); // API doesn't return created_at, use current date
+        setCreatedAt(user.created_at || new Date().toISOString()); // Use created_at from API
       } catch (error) {
         console.error('Failed to get user data:', error);
         
@@ -113,6 +115,17 @@ export default function ProfilePage() {
                   <div>
                     <h3 className="text-base font-semibold text-white mb-3">Account Information</h3>
                     <div className="space-y-2.5">
+                      {/* User ID */}
+                      <div className="flex items-center gap-3 p-3 rounded-lg bg-gray-800/30 border border-gray-700/50">
+                        <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-gray-500/10">
+                          <span className="text-xs font-mono text-gray-400">#</span>
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <label className="text-xs text-gray-500">User ID</label>
+                          <p className="text-white font-medium text-sm">{userId}</p>
+                        </div>
+                      </div>
+
                       {/* Full Name */}
                       <div className="flex items-center gap-3 p-3 rounded-lg bg-gray-800/30 border border-gray-700/50">
                         <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-blue-500/10">

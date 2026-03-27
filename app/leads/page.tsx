@@ -151,21 +151,30 @@ function LeadsPageContent() {
           return;
         }
 
-        const itemsPerPage = isMobile ? ITEMS_PER_PAGE_MOBILE : ITEMS_PER_PAGE_DESKTOP;
+        // Set limit to 10k when template is selected to get all data
+        const limit = 10000;
         
         const leadsResponse = await crawlerAPI.getLeads({
           template_id: selectedTemplate,
-          search: searchQuery.trim() || undefined,
           sort_by: sortBy,
           sort_order: sortOrder,
-          page: currentPage,
-          limit: itemsPerPage,
+          limit: limit,
         });
 
-        // Filter by selected requirements on client side (since API doesn't support this yet)
-        let filteredLeads = leadsResponse.leads;
+        // Apply client-side filtering
+        let filteredLeads = leadsResponse.leads || [];
+        
+        // Filter by search query (name)
+        if (searchQuery.trim()) {
+          const query = searchQuery.trim().toLowerCase();
+          filteredLeads = filteredLeads.filter(lead => 
+            lead.name.toLowerCase().includes(query)
+          );
+        }
+        
+        // Filter by selected requirements
         if (selectedRequirements.length > 0) {
-          filteredLeads = leadsResponse.leads.filter(lead => {
+          filteredLeads = filteredLeads.filter(lead => {
             if (!lead.scoring_data?.results) return false;
             
             // Check if lead matches ALL selected requirements
@@ -177,8 +186,14 @@ function LeadsPageContent() {
           });
         }
 
-        setLeads(filteredLeads);
-        setTotalCount(leadsResponse.total);
+        // Apply client-side pagination
+        const itemsPerPage = isMobile ? ITEMS_PER_PAGE_MOBILE : ITEMS_PER_PAGE_DESKTOP;
+        const startIndex = (currentPage - 1) * itemsPerPage;
+        const endIndex = startIndex + itemsPerPage;
+        const paginatedLeads = filteredLeads.slice(startIndex, endIndex);
+
+        setLeads(paginatedLeads);
+        setTotalCount(filteredLeads.length);
       } catch (error) {
         console.error('Error fetching leads:', error);
       } finally {
@@ -276,10 +291,12 @@ function LeadsPageContent() {
     setSendingOutreach(true);
     
     try {
-      // Fetch all selected leads data from API (not just current page)
-      console.log('📋 Fetching selected leads data from API...');
+      // Since we now load all leads with limit 10k, we can get selected leads data directly
+      // But we still need to fetch all leads to get complete data for selected ones
+      console.log('📋 Fetching all leads data from API...');
       const allLeadsResponse = await crawlerAPI.getLeads({
         template_id: selectedTemplate,
+        limit: 10000,
       });
       
       const selectedLeadsData = allLeadsResponse.leads.filter(lead => 
