@@ -378,18 +378,72 @@ function LeadsPageContent() {
   const exportToCSV = async () => {
     setExporting(true);
     try {
-      const downloadUrl = await crawlerAPI.exportLeads(selectedTemplate, 'csv');
+      // Get all leads data for the selected template with current filters
+      const allLeadsResponse = await crawlerAPI.getLeads({
+        template_id: selectedTemplate,
+        sort_by: sortBy,
+        sort_order: sortOrder,
+        limit: 10000, // Get all data
+      });
+
+      // Apply client-side filtering (same logic as in fetchLeads)
+      let filteredLeads = allLeadsResponse.leads || [];
       
-      // Create download link
+      // Filter by search query (name)
+      if (searchQuery.trim()) {
+        const query = searchQuery.trim().toLowerCase();
+        filteredLeads = filteredLeads.filter(lead => 
+          lead.name.toLowerCase().includes(query)
+        );
+      }
+      
+      // Filter by selected requirements
+      if (selectedRequirements.length > 0) {
+        filteredLeads = filteredLeads.filter(lead => {
+          if (!lead.scoring_data?.results) return false;
+          
+          // Check if lead matches ALL selected requirements
+          const results = lead.scoring_data.results;
+          return selectedRequirements.every(reqId => {
+            const result = results.find((r: any) => r.id === reqId);
+            return result && result.matched === true;
+          });
+        });
+      }
+
+      // Convert to CSV format
+      if (filteredLeads.length === 0) {
+        toast.error('No data to export');
+        return;
+      }
+
+      const csvHeaders = ['Name', 'Profile URL', 'Score', 'Status', 'Processed At', 'Sent At'];
+      const csvRows = filteredLeads.map(lead => [
+        lead.name,
+        lead.profile_url || '',
+        lead.score != null ? lead.score.toFixed(1) : '',
+        lead.connection_status || '',
+        lead.processed_at ? new Date(lead.processed_at).toISOString() : '',
+        lead.sent_at ? new Date(lead.sent_at).toISOString() : ''
+      ]);
+
+      const csvContent = [
+        csvHeaders.join(','),
+        ...csvRows.map(row => row.map(field => `"${field}"`).join(','))
+      ].join('\n');
+
+      // Create and download file
+      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
       const link = document.createElement('a');
-      link.href = downloadUrl.download_url;
+      link.href = URL.createObjectURL(blob);
       link.download = `leads_${templates.find(t => t.id === selectedTemplate)?.name || 'unknown'}_${new Date().toISOString().split('T')[0]}.csv`;
       link.style.visibility = 'hidden';
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
+      URL.revokeObjectURL(link.href);
       
-      toast.success('CSV exported successfully!');
+      toast.success(`CSV exported successfully! (${filteredLeads.length} leads)`);
     } catch (error) {
       console.error('Error exporting CSV:', error);
       toast.error('Failed to export CSV');
@@ -402,18 +456,70 @@ function LeadsPageContent() {
   const exportToJSON = async () => {
     setExporting(true);
     try {
-      const downloadUrl = await crawlerAPI.exportLeads(selectedTemplate, 'json');
+      // Get all leads data for the selected template with current filters
+      const allLeadsResponse = await crawlerAPI.getLeads({
+        template_id: selectedTemplate,
+        sort_by: sortBy,
+        sort_order: sortOrder,
+        limit: 10000, // Get all data
+      });
+
+      // Apply client-side filtering (same logic as in fetchLeads)
+      let filteredLeads = allLeadsResponse.leads || [];
       
-      // Create download link
+      // Filter by search query (name)
+      if (searchQuery.trim()) {
+        const query = searchQuery.trim().toLowerCase();
+        filteredLeads = filteredLeads.filter(lead => 
+          lead.name.toLowerCase().includes(query)
+        );
+      }
+      
+      // Filter by selected requirements
+      if (selectedRequirements.length > 0) {
+        filteredLeads = filteredLeads.filter(lead => {
+          if (!lead.scoring_data?.results) return false;
+          
+          // Check if lead matches ALL selected requirements
+          const results = lead.scoring_data.results;
+          return selectedRequirements.every(reqId => {
+            const result = results.find((r: any) => r.id === reqId);
+            return result && result.matched === true;
+          });
+        });
+      }
+
+      if (filteredLeads.length === 0) {
+        toast.error('No data to export');
+        return;
+      }
+
+      // Create JSON content
+      const jsonContent = JSON.stringify({
+        template: templates.find(t => t.id === selectedTemplate)?.name || 'Unknown',
+        exported_at: new Date().toISOString(),
+        total_leads: filteredLeads.length,
+        filters: {
+          search_query: searchQuery || null,
+          selected_requirements: selectedRequirements.length > 0 ? selectedRequirements : null,
+          sort_by: sortBy,
+          sort_order: sortOrder
+        },
+        leads: filteredLeads
+      }, null, 2);
+
+      // Create and download file
+      const blob = new Blob([jsonContent], { type: 'application/json;charset=utf-8;' });
       const link = document.createElement('a');
-      link.href = downloadUrl.download_url;
+      link.href = URL.createObjectURL(blob);
       link.download = `leads_${templates.find(t => t.id === selectedTemplate)?.name || 'unknown'}_${new Date().toISOString().split('T')[0]}.json`;
       link.style.visibility = 'hidden';
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
+      URL.revokeObjectURL(link.href);
       
-      toast.success('JSON exported successfully!');
+      toast.success(`JSON exported successfully! (${filteredLeads.length} leads)`);
     } catch (error) {
       console.error('Error exporting JSON:', error);
       toast.error('Failed to export JSON');
