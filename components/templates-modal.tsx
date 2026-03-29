@@ -41,12 +41,7 @@ export function TemplatesModal({ companyId, companyName, isOpen, onClose }: Temp
   async function fetchTemplates() {
     setLoading(true);
     try {
-      const response = await crawlerAPI.getTemplates();
-      const companyTemplates = (response.templates || []).filter(
-        template => template.company_id === companyId
-      );
-      
-      console.log('Templates in modal:', companyTemplates);
+      const companyTemplates = await crawlerAPI.getCompanyTemplates(companyId);
       setTemplates(companyTemplates);
       setFilteredTemplates(companyTemplates);
     } catch (error) {
@@ -82,8 +77,8 @@ export function TemplatesModal({ companyId, companyName, isOpen, onClose }: Temp
   const paginatedTemplates = filteredTemplates.slice(startIndex, startIndex + ITEMS_PER_PAGE);
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
-      <div className="relative w-full max-w-5xl max-h-[90vh] overflow-hidden rounded-xl border border-gray-700 bg-[#0f1419] flex flex-col">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" onClick={onClose}>
+      <div className="relative w-full max-w-5xl max-h-[90vh] overflow-hidden rounded-xl border border-gray-700 bg-[#0f1419] flex flex-col" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between border-b border-gray-700 bg-[#1a1f2e] p-6 flex-shrink-0">
           <div>
             <h2 className="text-2xl font-bold text-white">Requirements - {companyName}</h2>

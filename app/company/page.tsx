@@ -13,12 +13,14 @@ const ITEMS_PER_PAGE_MOBILE = 5;
 
 export default function CompanyPage() {
   const [companies, setCompanies] = useState<Company[]>([]);
-  const [filteredCompanies, setFilteredCompanies] = useState<Company[]>([]);
   const [loading, setLoading] = useState(true);
   const [currentPage, setCurrentPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
+  const [totalItems, setTotalItems] = useState(0);
   const [searchQuery, setSearchQuery] = useState('');
-  const [selectedCompany, setSelectedCompany] = useState<{ id: string; name: string } | null>(null);
-  const [sortOrder, setSortOrder] = useState<'asc' | 'desc' | null>(null);
+const [selectedCompany, setSelectedCompany] = useState<{ id: string; name: string } | null>(null);
+  const [sortField, setSortField] = useState<'name' | 'domain' | 'created_at'>('name');
+  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc');
   const [isMobile, setIsMobile] = useState(false);
 
   useEffect(() => {
@@ -33,53 +35,47 @@ export default function CompanyPage() {
   useEffect(() => {
     async function fetchCompanies() {
       setLoading(true);
-      console.log('Starting to fetch companies...');
       try {
-        const response = await crawlerAPI.getCompanies();
-        console.log('Companies response:', response);
+        const itemsPerPage = isMobile ? ITEMS_PER_PAGE_MOBILE : ITEMS_PER_PAGE_DESKTOP;
         
-        const companiesData = response.companies || [];
-        console.log('Companies data:', companiesData);
-        console.log('Number of companies:', companiesData.length);
+        const response = await crawlerAPI.getCompanies({
+          page: currentPage,
+          per_page: itemsPerPage,
+          search: searchQuery.trim() || undefined,
+          sort: sortField,
+          order: sortOrder,
+        });
         
-        setCompanies(companiesData);
-        setFilteredCompanies(companiesData);
+        setCompanies(response.companies.companies || []);
+        setTotalPages(response.companies.pagination.total_pages);
+        setTotalItems(response.companies.pagination.total_count);
       } catch (error) {
         console.error('Error fetching companies:', error);
-        toast.error(`Failed to load companies`);
+        toast.error('Failed to load companies');
       } finally {
         setLoading(false);
       }
     }
 
     fetchCompanies();
-  }, []);
+  }, [currentPage, searchQuery, sortField, sortOrder, isMobile]);
 
+  // Reset to page 1 when search changes
   useEffect(() => {
-    let filtered = companies.filter(company =>
-      company.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      company.code.toLowerCase().includes(searchQuery.toLowerCase())
-    );
-    
-    // Only sort if user clicked sort button
-    if (sortOrder !== null) {
-      filtered = [...filtered].sort((a, b) => {
-        if (sortOrder === 'asc') {
-          return a.name.localeCompare(b.name);
-        } else {
-          return b.name.localeCompare(a.name);
-        }
-      });
-    }
-    
-    setFilteredCompanies(filtered);
     setCurrentPage(1);
-  }, [searchQuery, companies, sortOrder]);
+  }, [searchQuery]);
+
+  const handleSort = (field: 'name' | 'domain' | 'created_at') => {
+    if (sortField === field) {
+      setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc');
+    } else {
+      setSortField(field);
+      setSortOrder('asc');
+    }
+    setCurrentPage(1);
+  };
 
   const itemsPerPage = isMobile ? ITEMS_PER_PAGE_MOBILE : ITEMS_PER_PAGE_DESKTOP;
-  const totalPages = Math.ceil(filteredCompanies.length / itemsPerPage);
-  const startIndex = (currentPage - 1) * itemsPerPage;
-  const paginatedCompanies = filteredCompanies.slice(startIndex, startIndex + itemsPerPage);
 
   const handleViewRequirements = (company: Company) => {
     setSelectedCompany({ id: company.id, name: company.name });
@@ -96,7 +92,7 @@ export default function CompanyPage() {
             <div className="mb-10">
               <h1 className="text-4xl font-bold text-white">Company</h1>
               <p className="mt-2 text-base text-gray-400">
-                Manage your companies ({filteredCompanies.length} total)
+                Manage your companies ({totalItems} total)
               </p>
             </div>
 
@@ -105,7 +101,7 @@ export default function CompanyPage() {
               <Search className="absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-gray-400" />
               <input
                 type="text"
-                placeholder="Search companies by name or code..."
+                placeholder="Search companies by name or domain..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 className="w-full rounded-lg border border-gray-700 bg-[#1a1f2e] py-3 pl-10 pr-4 text-white placeholder-gray-400 focus:border-blue-500 focus:outline-none"
@@ -114,28 +110,36 @@ export default function CompanyPage() {
             
             <div className="flex gap-3">
               <button
-                onClick={() => setSortOrder(sortOrder === 'asc' ? null : 'asc')}
+                onClick={() => handleSort('name')}
                 className={`flex items-center gap-2 rounded-lg border px-5 py-3 transition-colors ${
-                  sortOrder === 'asc'
+                  sortField === 'name'
                     ? 'border-blue-500 bg-blue-500/10 text-blue-500'
                     : 'border-gray-700 bg-[#1a1f2e] text-gray-400 hover:border-gray-600'
                 }`}
-                title="Sort A to Z"
+                title={`Sort by Name ${sortField === 'name' ? (sortOrder === 'asc' ? '(A-Z)' : '(Z-A)') : ''}`}
               >
-                <ArrowUpAZ className="h-5 w-5" />
-                <span className="hidden sm:inline">A-Z</span>
+                {sortField === 'name' && sortOrder === 'asc' ? (
+                  <ArrowUpAZ className="h-5 w-5" />
+                ) : (
+                  <ArrowDownZA className="h-5 w-5" />
+                )}
+                <span className="hidden sm:inline">Name</span>
               </button>
               <button
-                onClick={() => setSortOrder(sortOrder === 'desc' ? null : 'desc')}
+                onClick={() => handleSort('domain')}
                 className={`flex items-center gap-2 rounded-lg border px-5 py-3 transition-colors ${
-                  sortOrder === 'desc'
+                  sortField === 'domain'
                     ? 'border-blue-500 bg-blue-500/10 text-blue-500'
                     : 'border-gray-700 bg-[#1a1f2e] text-gray-400 hover:border-gray-600'
                 }`}
-                title="Sort Z to A"
+                title={`Sort by Domain ${sortField === 'domain' ? (sortOrder === 'asc' ? '(A-Z)' : '(Z-A)') : ''}`}
               >
-                <ArrowDownZA className="h-5 w-5" />
-                <span className="hidden sm:inline">Z-A</span>
+                {sortField === 'domain' && sortOrder === 'asc' ? (
+                  <ArrowUpAZ className="h-5 w-5" />
+                ) : (
+                  <ArrowDownZA className="h-5 w-5" />
+                )}
+                <span className="hidden sm:inline">Domain</span>
               </button>
             </div>
           </div>
@@ -156,7 +160,7 @@ export default function CompanyPage() {
                 </div>
               ))}
             </div>
-          ) : filteredCompanies.length === 0 ? (
+          ) : companies.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-20">
               <div className="mb-6 space-y-2">
                 <div className="h-1 w-16 rounded-full bg-gray-700" />
@@ -169,7 +173,7 @@ export default function CompanyPage() {
           ) : (
             <div className="flex flex-col min-h-[50vh]">
               <div className="grid gap-6 grid-cols-1 md:grid-cols-2 lg:grid-cols-5 animate-flip-in">
-                {paginatedCompanies.map((company) => (
+                {companies.map((company) => (
                   <div
                     key={company.id}
                     className="shine-effect group relative rounded-xl border border-gray-700 bg-[#1a1f2e] p-5 transition-all hover:border-gray-600 hover:shadow-lg"
@@ -179,7 +183,8 @@ export default function CompanyPage() {
                     </div>
 
                     <h3 className="mb-2 text-base font-semibold text-white line-clamp-1">{company.name}</h3>
-                    <p className="mb-5 text-sm text-gray-500">Code: {company.code}</p>
+                    <p className="mb-2 text-sm text-gray-500">Code: {company.code}</p>
+                    <p className="mb-3 text-sm text-gray-400 line-clamp-1">{company.domain}</p>
 
                     <div className="flex items-center justify-between border-t border-gray-700 pt-4">
                       <span className="text-xs text-gray-500">

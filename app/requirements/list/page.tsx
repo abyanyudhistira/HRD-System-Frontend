@@ -5,7 +5,7 @@ import { Sidebar } from '@/components/sidebar';
 import { TopHeader } from '@/components/top-header';
 import { RequirementsViewModal } from '@/components/requirements-view-modal';
 import { crawlerAPI } from '@/lib/api';
-import { Search, ChevronDown, ChevronUp, Edit, Trash2, ChevronLeft, ChevronRight, X } from 'lucide-react';
+import { Search, ChevronDown, ChevronUp, Edit, Trash2, ChevronLeft, ChevronRight } from 'lucide-react';
 import toast from 'react-hot-toast';
 
 interface Template {
@@ -84,14 +84,15 @@ export default function RequirementsListPage() {
   async function fetchData() {
     setLoading(true);
     try {
-      // Fetch templates and companies from API
-      const [templatesResponse, companiesResponse] = await Promise.all([
-        crawlerAPI.getTemplates(),
-        crawlerAPI.getCompanies()
-      ]);
+      const companiesResponse = await crawlerAPI.getCompanies({ per_page: 999 });
+      const companiesList: Company[] = companiesResponse.companies.companies || [];
+      setCompanies(companiesList);
 
-      setTemplates(templatesResponse.templates || []);
-      setCompanies(companiesResponse.companies || []);
+      // Fetch templates per company to get full data including job_title
+      const allTemplates = await Promise.all(
+        companiesList.map(c => crawlerAPI.getCompanyTemplates(c.id).catch(() => []))
+      );
+      setTemplates(allTemplates.flat());
     } catch (error) {
       console.error('Error fetching data:', error);
       toast.error('Failed to load templates');
@@ -134,20 +135,19 @@ export default function RequirementsListPage() {
   }
 
   async function handleDelete(id: string) {
-    if (deleting) return
-    
-    setDeleting(true)
+    if (deleting) return;
+    setDeleting(true);
     try {
-      await crawlerAPI.deleteTemplate(id);
-
-      toast.success('Template deleted successfully');
+      // Delete = set requirements to null via PUT
+      await crawlerAPI.updateTemplate(id, { requirements: null });
+      toast.success('Requirements cleared successfully');
       setDeleteConfirm(null);
       fetchData();
     } catch (error) {
-      console.error('Error deleting template:', error);
-      toast.error('Failed to delete template');
+      console.error('Error clearing requirements:', error);
+      toast.error('Failed to clear requirements');
     } finally {
-      setDeleting(false)
+      setDeleting(false);
     }
   }
 
@@ -440,7 +440,7 @@ export default function RequirementsListPage() {
                                   {template.job_title || '-'}
                                 </td>
                                 <td className="px-6 py-4 text-gray-400 text-sm">
-                                  {template.companies?.name || '-'}
+                                  {companies.find(c => c.id === template.company_id)?.name || '-'}
                                 </td>
                                 <td className="px-6 py-4">
                                   {hasRequirements ? (
@@ -555,57 +555,84 @@ export default function RequirementsListPage() {
         />
       )}
 
-      {/* Edit JSON Modal */}
+      {/* Edit Requirements Modal */}
       {selectedTemplate && showEditModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-          <div className="w-full max-w-4xl rounded-lg border border-gray-700 bg-[#1a1f2e] shadow-xl max-h-[90vh] flex flex-col">
-            <div className="flex items-center justify-between border-b border-gray-700 p-6">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={() => { setShowEditModal(false); setSelectedTemplate(null); }}>
+          <div className="w-full max-w-2xl rounded-xl border border-gray-700 bg-[#0f1419] shadow-xl max-h-[85vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between border-b border-gray-700 bg-[#1a1f2e] px-6 py-4 flex-shrink-0">
               <div>
-                <h2 className="text-xl font-semibold text-white">Edit Requirements (JSON)</h2>
-                <p className="text-sm text-gray-400 mt-1">{selectedTemplate.name}</p>
+                <h2 className="text-lg font-semibold text-white">Edit Requirements</h2>
+                <p className="text-sm text-gray-400 mt-0.5">{selectedTemplate.name}</p>
               </div>
-              <button
-                onClick={() => {
-                  setShowEditModal(false);
-                  setSelectedTemplate(null);
-                }}
-                className="rounded-md p-1 transition-colors hover:bg-gray-700 text-gray-400 hover:text-white"
-              >
-                <X className="h-5 w-5" />
-              </button>
             </div>
 
             <div className="flex-1 overflow-auto p-6">
-              <textarea
-                value={editingJson}
-                onChange={(e) => setEditingJson(e.target.value)}
-                className="w-full h-full min-h-[400px] rounded-md border border-gray-700 bg-[#141C33] px-4 py-3 text-white placeholder-gray-500 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 font-mono text-sm resize-none"
-                placeholder="Enter JSON..."
-              />
+              <table className="w-full text-sm">
+                <thead className="sticky top-0 bg-[#0f1419]">
+                  <tr className="border-b border-gray-700">
+                    <th className="pb-3 text-left text-xs font-medium text-gray-400 uppercase w-8">#</th>
+                    <th className="pb-3 text-left text-xs font-medium text-gray-400 uppercase">Type</th>
+                    <th className="pb-3 text-left text-xs font-medium text-gray-400 uppercase">Label</th>
+                    <th className="pb-3 text-left text-xs font-medium text-gray-400 uppercase">Value</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-800">
+                  {(() => {
+                    let reqs: any[] = [];
+                    try { reqs = JSON.parse(editingJson)?.requirements || []; } catch {}
+                    return reqs.map((req: any, index: number) => (
+                      <tr key={req.id || index} className="group">
+                        <td className="py-3 pr-3 text-gray-600 align-top pt-4">{index + 1}</td>
+                        <td className="py-3 pr-3 align-top pt-4">
+                          <span className="text-xs text-gray-400 font-mono">{req.type}</span>
+                        </td>
+                        <td className="py-3 pr-3 align-top">
+                          <input
+                            value={req.label}
+                            onChange={(e) => {
+                              try {
+                                const parsed = JSON.parse(editingJson);
+                                parsed.requirements[index].label = e.target.value;
+                                setEditingJson(JSON.stringify(parsed, null, 2));
+                              } catch {}
+                            }}
+                            className="w-full rounded-md border border-gray-700 bg-[#1a1f2e] px-2 py-1.5 text-sm text-white focus:border-blue-500 focus:outline-none"
+                          />
+                        </td>
+                        <td className="py-3 align-top">
+                          <input
+                            value={String(req.value)}
+                            onChange={(e) => {
+                              try {
+                                const parsed = JSON.parse(editingJson);
+                                parsed.requirements[index].value = e.target.value;
+                                setEditingJson(JSON.stringify(parsed, null, 2));
+                              } catch {}
+                            }}
+                            className="w-full rounded-md border border-gray-700 bg-[#1a1f2e] px-2 py-1.5 text-sm text-white font-mono focus:border-blue-500 focus:outline-none"
+                          />
+                        </td>
+                      </tr>
+                    ));
+                  })()}
+                </tbody>
+              </table>
             </div>
 
-            <div className="flex justify-end gap-3 border-t border-gray-700 p-6">
+            <div className="flex justify-end gap-3 border-t border-gray-700 bg-[#1a1f2e] px-6 py-4 flex-shrink-0">
               <button
-                onClick={() => {
-                  setShowEditModal(false);
-                  setSelectedTemplate(null);
-                }}
+                onClick={() => { setShowEditModal(false); setSelectedTemplate(null); }}
                 disabled={saving}
-                className="rounded-md border border-gray-700 px-4 py-2 text-sm font-medium text-gray-300 transition-colors hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                className="rounded-lg border border-gray-700 px-4 py-2 text-sm text-gray-300 transition-colors hover:bg-gray-700 disabled:opacity-50"
               >
                 Cancel
               </button>
               <button
                 onClick={handleSaveEdit}
                 disabled={saving}
-                className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+                className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-blue-700 disabled:opacity-50 flex items-center gap-2"
               >
-                {saving && (
-                  <svg className="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                  </svg>
-                )}
+                {saving && <svg className="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"/></svg>}
                 {saving ? 'Saving...' : 'Save Changes'}
               </button>
             </div>
@@ -615,32 +642,27 @@ export default function RequirementsListPage() {
 
       {/* Delete Confirmation Modal */}
       {deleteConfirm && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-          <div className="w-full max-w-md rounded-lg border border-gray-700 bg-[#1a1f2e] shadow-xl">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={() => setDeleteConfirm(null)}>
+          <div className="w-full max-w-md rounded-xl border border-gray-700 bg-[#1a1f2e] shadow-xl" onClick={(e) => e.stopPropagation()}>
             <div className="p-6">
-              <h3 className="text-lg font-semibold text-white mb-2">Delete Template</h3>
+              <h3 className="text-lg font-semibold text-white mb-2">Clear Requirements</h3>
               <p className="text-sm text-gray-400 mb-6">
-                Are you sure you want to delete this template? This action cannot be undone.
+                Are you sure? This will remove all requirements from this template. The template itself will remain.
               </p>
               <div className="flex justify-end gap-3">
                 <button
                   onClick={() => setDeleteConfirm(null)}
                   disabled={deleting}
-                  className="rounded-md border border-gray-700 px-4 py-2 text-sm font-medium text-gray-300 transition-colors hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="rounded-lg border border-gray-700 px-4 py-2 text-sm text-gray-300 transition-colors hover:bg-gray-700 disabled:opacity-50"
                 >
                   Cancel
                 </button>
                 <button
                   onClick={() => handleDelete(deleteConfirm)}
                   disabled={deleting}
-                  className="rounded-md bg-red-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+                  className="rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-red-700 disabled:opacity-50 flex items-center gap-2"
                 >
-                  {deleting && (
-                    <svg className="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                    </svg>
-                  )}
+                  {deleting && <svg className="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"/></svg>}
                   {deleting ? 'Deleting...' : 'Delete'}
                 </button>
               </div>

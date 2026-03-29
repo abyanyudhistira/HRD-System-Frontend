@@ -142,11 +142,15 @@ export type TemplateUpdate = {
 export type Company = {
   id: string;
   name: string;
+  code: string;
+  domain?: string;
   created_at: string;
 };
 
 export type CompanyCreate = {
   name: string;
+  code?: string;
+  domain?: string;
 };
 
 // Requirement Types
@@ -268,12 +272,20 @@ class CrawlerAPI {
       });
 
       if (!response.ok) {
+        // Handle expired/invalid token
+        if (response.status === 401) {
+          this.clearToken();
+          if (typeof window !== 'undefined') {
+            window.location.href = '/login';
+          }
+          throw new Error('Session expired. Please login again.');
+        }
+
         let errorMessage = `HTTP ${response.status}`;
         try {
           const errorData = await response.json();
           errorMessage = errorData.detail || errorData.message || errorMessage;
         } catch {
-          // If response is not JSON, use status text
           errorMessage = response.statusText || errorMessage;
         }
         throw new Error(errorMessage);
@@ -397,8 +409,42 @@ class CrawlerAPI {
   }
 
   // ===== COMPANIES MANAGEMENT =====
-  async getCompanies() {
-    return this.request<{ companies: Company[] }>('/api/companies');
+  async getCompanies(params?: {
+    page?: number;
+    per_page?: number;
+    search?: string;
+    sort?: 'name' | 'domain' | 'created_at';
+    order?: 'asc' | 'desc';
+  }) {
+    const searchParams = new URLSearchParams();
+    if (params?.page) searchParams.set('page', params.page.toString());
+    if (params?.per_page) searchParams.set('per_page', params.per_page.toString());
+    if (params?.search) searchParams.set('search', params.search);
+    if (params?.sort) searchParams.set('sort', params.sort);
+    if (params?.order) searchParams.set('order', params.order);
+
+    const queryString = searchParams.toString();
+    const endpoint = queryString ? `/api/companies?${queryString}` : '/api/companies';
+    
+const response = await this.request<{
+  success: boolean;
+  count: number;
+  companies: {          // <-- ini harus object, bukan Company[]
+    companies: Company[];
+    pagination: {
+      total_count: number;
+      total_pages: number;
+      current_page: number;
+      per_page: number;
+      has_next: boolean;
+      has_prev: boolean;
+    };
+  };
+}>(endpoint);
+
+
+    // Return the response as-is since it matches the expected structure
+    return response;
   }
 
   async createCompany(data: CompanyCreate) {
@@ -434,7 +480,17 @@ class CrawlerAPI {
 
   // ===== REQUIREMENTS TEMPLATES =====
   async getTemplates() {
-    return this.request<any>('/api/requirements/templates');
+    return this.request<{ success: boolean; templates: Template[] }>('/api/requirements/templates');
+  }
+
+  async getCompanyTemplates(companyId: string) {
+    const response = await this.request<{
+      success: boolean;
+      company_id: string;
+      count: number;
+      templates: Template[];
+    }>(`/api/companies/${companyId}/templates`);
+    return response.templates;
   }
 
   // ===== SCHEDULER MANAGEMENT =====

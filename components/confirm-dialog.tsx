@@ -1,6 +1,6 @@
 'use client';
 
-import { X, AlertTriangle } from 'lucide-react';
+import { AlertTriangle } from 'lucide-react';
 
 type ConfirmDialogProps = {
   isOpen: boolean;
@@ -39,12 +39,6 @@ export function ConfirmDialog({
             <h2 className="text-lg font-semibold text-white">{title}</h2>
             <p className="mt-2 text-sm text-gray-400">{message}</p>
           </div>
-          <button
-            onClick={onClose}
-            className="rounded-md p-1 text-gray-400 transition-colors hover:bg-zinc-900 hover:text-white"
-          >
-            <X className="h-5 w-5" />
-          </button>
         </div>
 
         <div className="flex justify-end gap-2 border-t border-gray-800 pt-4">
